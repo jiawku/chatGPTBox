@@ -4,6 +4,8 @@ import { changeLanguage, t } from 'i18next'
 import { config as menuConfig } from '../content-script/menu-tools/index.mjs'
 
 const menuId = 'ChatGPTBox-Menu'
+let refreshMenuQueue = Promise.resolve()
+
 const onClickMenu = (info, tab) => {
   Browser.tabs.query({ active: true, currentWindow: true }).then((tabs) => {
     const currentTab = tabs[0]
@@ -33,46 +35,79 @@ const onClickMenu = (info, tab) => {
     }
   })
 }
-export function refreshMenu() {
+
+const isDuplicateMenuError = (error) => Boolean(error?.message?.includes('duplicate id'))
+const isMissingMenuError = (error) =>
+  Boolean(
+    error?.message?.includes('No such menu item') ||
+      error?.message?.includes('Cannot find menu item'),
+  )
+
+async function safeCreateMenuItem(options) {
+  try {
+    await Browser.contextMenus.create(options)
+  } catch (error) {
+    if (!isDuplicateMenuError(error)) throw error
+  }
+}
+
+async function executeRefreshMenu() {
   if (Browser.contextMenus.onClicked.hasListener(onClickMenu))
     Browser.contextMenus.onClicked.removeListener(onClickMenu)
-  Browser.contextMenus.removeAll().then(async () => {
-    if ((await getUserConfig()).hideContextMenu) return
 
-    await getPreferredLanguageKey().then((lang) => {
-      changeLanguage(lang)
-    })
-    Browser.contextMenus.create({
-      id: menuId,
-      title: 'ChatGPTBox',
+  try {
+    await Browser.contextMenus.removeAll()
+  } catch (error) {
+    if (!isMissingMenuError(error)) throw error
+  }
+
+  const config = await getUserConfig()
+  if (config.hideContextMenu) return
+
+  const lang = await getPreferredLanguageKey()
+  await changeLanguage(lang)
+
+  await safeCreateMenuItem({
+    id: menuId,
+    title: 'ChatGPTBox',
+    contexts: ['all'],
+  })
+
+  for (const [key, value] of Object.entries(menuConfig)) {
+    await safeCreateMenuItem({
+      id: menuId + key,
+      parentId: menuId,
+      title: t(value.label),
       contexts: ['all'],
     })
+  }
 
-    for (const [k, v] of Object.entries(menuConfig)) {
-      Browser.contextMenus.create({
-        id: menuId + k,
-        parentId: menuId,
-        title: t(v.label),
-        contexts: ['all'],
-      })
-    }
-    Browser.contextMenus.create({
-      id: menuId + 'separator1',
-      parentId: menuId,
-      contexts: ['selection'],
-      type: 'separator',
-    })
-    for (const index in defaultConfig.selectionTools) {
-      const key = defaultConfig.selectionTools[index]
-      const desc = defaultConfig.selectionToolsDesc[index]
-      Browser.contextMenus.create({
-        id: menuId + key,
-        parentId: menuId,
-        title: t(desc),
-        contexts: ['selection'],
-      })
-    }
-
-    Browser.contextMenus.onClicked.addListener(onClickMenu)
+  await safeCreateMenuItem({
+    id: menuId + 'separator1',
+    parentId: menuId,
+    contexts: ['selection'],
+    type: 'separator',
   })
+
+  for (let index = 0; index < defaultConfig.selectionTools.length; index += 1) {
+    const key = defaultConfig.selectionTools[index]
+    const desc = defaultConfig.selectionToolsDesc[index]
+    await safeCreateMenuItem({
+      id: menuId + key,
+      parentId: menuId,
+      title: t(desc),
+      contexts: ['selection'],
+    })
+  }
+
+  Browser.contextMenus.onClicked.addListener(onClickMenu)
+}
+
+export function refreshMenu() {
+  refreshMenuQueue = refreshMenuQueue
+    .then(() => executeRefreshMenu())
+    .catch((error) => {
+      console.error('Failed to refresh context menu', error)
+    })
+  return refreshMenuQueue
 }

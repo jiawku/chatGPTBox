@@ -67,6 +67,8 @@ export default class Bard {
       const response = await fetch('https://gemini.google.com', {
         headers: {
           Cookie: this.cookies,
+          'X-Same-Domain': '1',
+          Referer: 'https://gemini.google.com/',
         },
       })
       const text = await response.text()
@@ -120,6 +122,10 @@ export default class Bard {
           }),
           headers: {
             Cookie: this.cookies,
+            'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+            'X-Same-Domain': '1',
+            Origin: 'https://gemini.google.com',
+            Referer: 'https://gemini.google.com/',
           },
         },
       )

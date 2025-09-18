@@ -6,6 +6,11 @@ import { t } from 'i18next'
  * @typedef {object} Session
  * @property {string|null} question
  * @property {Object[]|null} conversationRecords
+ * @property {Array<Object>|undefined} targets
+ * @property {'parallel'|'sequential'|undefined} fanout
+ * @property {string|undefined} lastRunId
+ * @property {Array<Object>|undefined} runs
+ * @property {Object.<string, object>|undefined} targetStates
  * @property {string|null} sessionName
  * @property {string|null} sessionId
  * @property {string|null} createdAt
@@ -43,6 +48,16 @@ import { t } from 'i18next'
 export function initSession({
   question = null,
   conversationRecords = [],
+  /** @type {Array<Object>|undefined} */
+  targets = [],
+  /** @type {'parallel'|'sequential'|undefined} */
+  fanout = 'parallel',
+  /** @type {string|undefined} */
+  lastRunId = undefined,
+  /** @type {Array<Object>|undefined} */
+  runs = [],
+  /** @type {Object.<string, object>|undefined} */
+  targetStates = {},
   sessionName = null,
   modelName = null,
   autoClean = false,
@@ -53,6 +68,11 @@ export function initSession({
     // common
     question,
     conversationRecords,
+    targets,
+    fanout,
+    lastRunId,
+    runs,
+    targetStates,
 
     sessionName,
     sessionId: uuidv4(),

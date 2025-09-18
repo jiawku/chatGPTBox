@@ -108,13 +108,13 @@ function App() {
       <div className="chat-container">
         <div className={`chat-sidebar ${collapsed ? 'collapsed' : ''}`}>
           <div className="chat-sidebar-button-group">
-            <button className="normal-button" onClick={toggleSidebar}>
+            <button type="button" className="normal-button" onClick={toggleSidebar}>
               {collapsed ? t('Pin') : t('Unpin')}
             </button>
-            <button className="normal-button" onClick={createNewChat}>
+            <button type="button" className="normal-button" onClick={createNewChat}>
               {t('New Chat')}
             </button>
-            <button className="normal-button" onClick={exportConversations}>
+            <button type="button" className="normal-button" onClick={exportConversations}>
               {t('Export')}
             </button>
           </div>
@@ -126,6 +126,7 @@ function App() {
                 index, // TODO editable session name
               ) => (
                 <button
+                  type="button"
                   key={index}
                   className={`normal-button ${sessionId === session.sessionId ? 'active' : ''}`}
                   style="display: flex; align-items: center; justify-content: space-between;"
@@ -154,6 +155,7 @@ function App() {
           <div className="chat-sidebar-button-group">
             <ConfirmButton text={t('Clear conversations')} onConfirm={clearConversations} />
             <button
+              type="button"
               className="normal-button"
               onClick={() => {
                 openUrl(Browser.runtime.getURL('popup.html'))

@@ -10,6 +10,10 @@ export const initDefaultSession = async () => {
     apiMode: config.apiMode,
     autoClean: false,
     extraCustomModelName: config.customModelName,
+    targets: [],
+    fanout: config.defaultFanout || 'parallel',
+    runs: [],
+    targetStates: {},
   })
 }
 

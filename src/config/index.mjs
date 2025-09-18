@@ -476,6 +476,14 @@ export const defaultConfig = {
   alwaysPinWindow: false,
   focusAfterAnswer: true,
 
+  // multi-model fanout default behavior for IndependentPanel
+  /** @type {'parallel'|'sequential'} */
+  defaultFanout: 'parallel',
+
+  // Claude Web enhancements
+  claudeWebSearchEnabled: false,
+  claudeWebSearchNumResults: 3,
+
   apiKey: '', // openai ApiKey
 
   azureApiKey: '',

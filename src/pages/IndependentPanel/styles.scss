@@ -102,7 +102,7 @@
     background-color: var(--theme-color);
   }
 
-  .normal-button {
+  .chat-sidebar .normal-button {
     width: 100%;
     min-height: 40px;
     padding: 1px 6px;
@@ -133,8 +133,8 @@
     color: var(--font-active-color);
   }
 
-  .normal-button.active,
-  .normal-button:hover {
+  .chat-sidebar .normal-button.active,
+  .chat-sidebar .normal-button:hover {
     background-color: var(--active-color);
   }
 

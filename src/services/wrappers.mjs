@@ -42,9 +42,19 @@ export async function getBingAccessToken() {
 }
 
 export async function getBardCookies() {
-  const token = (await Browser.cookies.get({ url: 'https://google.com/', name: '__Secure-1PSID' }))
+  const psid = (await Browser.cookies.get({ url: 'https://google.com/', name: '__Secure-1PSID' }))
     ?.value
-  return '__Secure-1PSID=' + token
+  const psidts = (
+    await Browser.cookies.get({ url: 'https://google.com/', name: '__Secure-1PSIDTS' })
+  )?.value
+  const psidcc = (
+    await Browser.cookies.get({ url: 'https://google.com/', name: '__Secure-1PSIDCC' })
+  )?.value
+  let cookie = ''
+  if (psid) cookie += `__Secure-1PSID=${psid}`
+  if (psidts) cookie += (cookie ? '; ' : '') + `__Secure-1PSIDTS=${psidts}`
+  if (psidcc) cookie += (cookie ? '; ' : '') + `__Secure-1PSIDCC=${psidcc}`
+  return cookie
 }
 
 export async function getClaudeSessionKey() {
@@ -93,14 +103,36 @@ export function handlePortError(session, port, err) {
   }
 }
 
-export function registerPortListener(executor) {
+export function registerPortListener(executor, fanoutExecutor) {
   Browser.runtime.onConnect.addListener((port) => {
     console.debug('connected')
     const onMessage = async (msg) => {
       console.debug('received msg', msg)
+      const config = await getUserConfig()
+
+      // Fanout (multi-target) execution path
+      if (msg.fanout && typeof fanoutExecutor === 'function') {
+        const baseSession = msg.session || {}
+        if (!baseSession.modelName) baseSession.modelName = config.modelName
+        if (!baseSession.apiMode && baseSession.modelName !== 'customModel')
+          baseSession.apiMode = config.apiMode
+        if (!baseSession.aiName)
+          baseSession.aiName = modelNameToDesc(
+            baseSession.apiMode ? apiModeToModelName(baseSession.apiMode) : baseSession.modelName,
+            t,
+            config.customModelName,
+          )
+        try {
+          await fanoutExecutor(baseSession, port, config, msg.fanout)
+        } catch (err) {
+          handlePortError(baseSession, port, err)
+        }
+        return
+      }
+
+      // Single-target execution path
       const session = msg.session
       if (!session) return
-      const config = await getUserConfig()
       if (!session.modelName) session.modelName = config.modelName
       if (!session.apiMode && session.modelName !== 'customModel') session.apiMode = config.apiMode
       if (!session.aiName)

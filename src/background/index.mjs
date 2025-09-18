@@ -56,6 +56,7 @@ import { generateAnswersWithMoonshotCompletionApi } from '../services/apis/moons
 import { generateAnswersWithMoonshotWebApi } from '../services/apis/moonshot-web.mjs'
 import { isUsingModelName } from '../utils/model-name-convert.mjs'
 import { generateAnswersWithDeepSeekApi } from '../services/apis/deepseek-api.mjs'
+import { v4 as uuidv4 } from 'uuid'
 
 function setPortProxy(port, proxyTabId) {
   port.proxy = Browser.tabs.connect(proxyTabId)
@@ -162,6 +163,102 @@ async function executeApi(session, port, config) {
     await generateAnswersWithGptCompletionApi(port, session.question, session, config.apiKey)
   } else if (isUsingGithubThirdPartyApiModel(session)) {
     await generateAnswersWithWaylaidwandererApi(port, session.question, session)
+  }
+}
+
+/**
+ * Execute multiple targets in parallel/sequential and tag streamed messages.
+ * @param {object} baseSession
+ * @param {any} port
+ * @param {object} config
+ * @param {{ runId?: string, fanoutMode?: 'parallel'|'sequential', targets: Array<{id: string, apiMode?: object, modelName?: string}> }} fanout
+ */
+async function executeFanout(baseSession, port, config, fanout) {
+  const runId = fanout.runId || uuidv4()
+  const fanoutMode = fanout.fanoutMode || 'parallel'
+  const targets = fanout.targets || []
+
+  // small helper to tag outgoing messages per target
+  const makeChildPort = (targetId) => {
+    return {
+      postMessage: (msg) => {
+        try {
+          port.postMessage({ ...msg, fanout: { runId, targetId } })
+        } catch (e) {
+          // swallow
+        }
+      },
+      onMessage: { addListener: () => {}, removeListener: () => {} },
+      onDisconnect: { addListener: () => {}, removeListener: () => {} },
+    }
+  }
+
+  // notify UI a fanout run starts
+  try {
+    port.postMessage({
+      type: 'FANOUT_START',
+      fanout: { runId, targetIds: targets.map((t) => t.id) },
+    })
+  } catch (e) {
+    /* empty */
+  }
+
+  const runSingle = async (target) => {
+    const childPort = makeChildPort(target.id)
+    // build a sub session with target model
+    const subSession = { ...baseSession }
+    if (target.apiMode) subSession.apiMode = target.apiMode
+    if (target.modelName) subSession.modelName = target.modelName
+    // clear retry flag for fresh call
+    subSession.isRetry = false
+    // hydrate provider-specific state from baseSession.targetStates[target.id]
+    try {
+      const state = baseSession?.targetStates?.[target.id]
+      if (state && typeof state === 'object') {
+        const keys = [
+          'conversationId',
+          'messageId',
+          'parentMessageId',
+          'wsRequestId',
+          'bingWeb_encryptedConversationSignature',
+          'bingWeb_conversationId',
+          'bingWeb_clientId',
+          'bingWeb_invocationId',
+          'bingWeb_jailbreakConversationId',
+          'bingWeb_parentMessageId',
+          'bingWeb_jailbreakConversationCache',
+          'poe_chatId',
+          'bard_conversationObj',
+          'claude_conversation',
+          'moonshot_conversation',
+        ]
+        keys.forEach((k) => {
+          if (k in state) subSession[k] = state[k]
+        })
+      }
+    } catch (e) {
+      // ignore
+    }
+    try {
+      await executeApi(subSession, childPort, config)
+    } catch (err) {
+      childPort.postMessage({ error: err?.message || String(err), done: true, session: subSession })
+    }
+  }
+
+  if (fanoutMode === 'sequential') {
+    for (const t of targets) {
+      // eslint-disable-next-line no-await-in-loop
+      await runSingle(t)
+    }
+  } else {
+    await Promise.allSettled(targets.map(runSingle))
+  }
+
+  try {
+    port.postMessage({ type: 'FANOUT_DONE', fanout: { runId } })
+  } catch (e) {
+    /* empty */
   }
 }
 
@@ -337,6 +434,10 @@ try {
   console.log(error)
 }
 
-registerPortListener(async (session, port, config) => await executeApi(session, port, config))
+registerPortListener(
+  async (session, port, config) => await executeApi(session, port, config),
+  async (baseSession, port, config, fanout) =>
+    await executeFanout(baseSession, port, config, fanout),
+)
 registerCommands()
 refreshMenu()
