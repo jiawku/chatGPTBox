@@ -40,10 +40,21 @@ const isDuplicateMenuError = (error) => Boolean(error?.message?.includes('duplic
 const isMissingMenuError = (error) =>
   Boolean(
     error?.message?.includes('No such menu item') ||
-      error?.message?.includes('Cannot find menu item'),
+      error?.message?.includes('Cannot find menu item') ||
+      error?.message?.includes('Cannot remove menu item'),
   )
 
+async function safeRemoveMenuItem(id) {
+  if (!id) return
+  try {
+    await Browser.contextMenus.remove(id)
+  } catch (error) {
+    if (!isMissingMenuError(error)) throw error
+  }
+}
+
 async function safeCreateMenuItem(options) {
+  await safeRemoveMenuItem(options.id)
   try {
     await Browser.contextMenus.create(options)
   } catch (error) {
