@@ -11,15 +11,84 @@ import { Hyperlink } from './Hyperlink'
 import { memo, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import Browser from 'webextension-polyfill'
+import PropTypes from 'prop-types'
 
+const katexFontFiles = [
+  'KaTeX_AMS-Regular',
+  'KaTeX_Caligraphic-Bold',
+  'KaTeX_Caligraphic-Regular',
+  'KaTeX_Fraktur-Bold',
+  'KaTeX_Fraktur-Regular',
+  'KaTeX_Main-Bold',
+  'KaTeX_Main-BoldItalic',
+  'KaTeX_Main-Italic',
+  'KaTeX_Main-Regular',
+  'KaTeX_Math-BoldItalic',
+  'KaTeX_Math-Italic',
+  'KaTeX_SansSerif-Bold',
+  'KaTeX_SansSerif-Italic',
+  'KaTeX_SansSerif-Regular',
+  'KaTeX_Script-Regular',
+  'KaTeX_Size1-Regular',
+  'KaTeX_Size2-Regular',
+  'KaTeX_Size3-Regular',
+  'KaTeX_Size4-Regular',
+  'KaTeX_Typewriter-Regular',
+]
+let katexFontsLoading
+
+/** Load KaTeX fonts only after math is rendered. */
 function loadKatexFonts() {
-  if (document.getElementById('chatgptbox-katex-fonts')) return
+  if (katexFontsLoading) return
 
-  const stylesheet = document.createElement('link')
-  stylesheet.id = 'chatgptbox-katex-fonts'
-  stylesheet.rel = 'stylesheet'
-  stylesheet.href = Browser.runtime.getURL('katex-fonts.css')
-  document.head.appendChild(stylesheet)
+  if (window.location.origin === new URL(Browser.runtime.getURL('/')).origin) {
+    if (document.getElementById('chatgptbox-katex-fonts')) return
+
+    const stylesheet = document.createElement('link')
+    stylesheet.id = 'chatgptbox-katex-fonts'
+    stylesheet.rel = 'stylesheet'
+    stylesheet.href = Browser.runtime.getURL('katex-fonts.css')
+    document.head.appendChild(stylesheet)
+    katexFontsLoading = true
+    return
+  }
+
+  // Binary FontFace sources avoid the host page's font-src restriction.
+  katexFontsLoading = Promise.all(
+    katexFontFiles.map(async (filename) => {
+      const response = await fetch(Browser.runtime.getURL(`katex-fonts/${filename}.woff2`))
+      if (!response.ok) throw new Error(`Failed to fetch ${filename}: ${response.status}`)
+      const [family, variant] = filename.split('-')
+      const font = new FontFace(family, await response.arrayBuffer(), {
+        style: variant.includes('Italic') ? 'italic' : 'normal',
+        weight: variant.includes('Bold') ? '700' : '400',
+      })
+      await font.load()
+      return font
+    }),
+  )
+    .then((fonts) => fonts.forEach((font) => document.fonts.add(font)))
+    .catch((error) => {
+      katexFontsLoading = null
+      console.warn('[markdown] Failed to load KaTeX fonts', error)
+    })
+}
+
+/** Request fonts when KaTeX has produced a math span. */
+// eslint-disable-next-line no-unused-vars
+function KatexSpan({ node, className, ...props }) {
+  useEffect(() => {
+    if (className?.split(/\s+/).includes('katex')) {
+      loadKatexFonts()
+    }
+  }, [className])
+
+  return <span className={className} {...props} />
+}
+
+KatexSpan.propTypes = {
+  node: PropTypes.object,
+  className: PropTypes.string,
 }
 
 // eslint-disable-next-line
@@ -122,12 +191,8 @@ const ThinkComponent = ({ node, children, ...props }) => {
   )
 }
 
+/** Render Markdown with on-demand KaTeX fonts. */
 export function MarkdownRender(props) {
-  useEffect(() => {
-    if (typeof props.children === 'string' && /\$|\\\(|\\\[/.test(props.children)) {
-      loadKatexFonts()
-    }
-  }, [props.children])
   return (
     <div dir="auto">
       <ReactMarkdown
@@ -210,6 +275,7 @@ export function MarkdownRender(props) {
         components={{
           a: Hyperlink,
           pre: Pre,
+          span: KatexSpan,
           think: ThinkComponent,
         }}
         {...props}

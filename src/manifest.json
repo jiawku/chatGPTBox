@@ -73,7 +73,7 @@
     {
       "resources": [
         "logo.png",
-        "katex-fonts.css"
+        "katex-fonts/*"
       ],
       "matches": [
         "<all_urls>"
