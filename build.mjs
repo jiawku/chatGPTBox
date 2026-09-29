@@ -544,6 +544,7 @@ async function finishOutput(outputDirSuffix, sourceBuildDir = outdir) {
   const commonFiles = [
     { src: 'src/logo.png', dst: 'logo.png' },
     { src: 'src/rules.json', dst: 'rules.json' },
+    { src: 'src/components/MarkdownRender/katex-fonts.css', dst: 'katex-fonts.css' },
 
     { src: `${sourceBuildDir}/shared.js`, dst: 'shared.js' },
     { src: `${sourceBuildDir}/content-script.css`, dst: 'content-script.css' }, // shared

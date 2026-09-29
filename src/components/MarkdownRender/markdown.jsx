@@ -8,8 +8,19 @@ import remarkGfm from 'remark-gfm'
 import remarkBreaks from 'remark-breaks'
 import { Pre } from './Pre'
 import { Hyperlink } from './Hyperlink'
-import { memo, useState } from 'react'
+import { memo, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import Browser from 'webextension-polyfill'
+
+function loadKatexFonts() {
+  if (document.getElementById('chatgptbox-katex-fonts')) return
+
+  const stylesheet = document.createElement('link')
+  stylesheet.id = 'chatgptbox-katex-fonts'
+  stylesheet.rel = 'stylesheet'
+  stylesheet.href = Browser.runtime.getURL('katex-fonts.css')
+  document.head.appendChild(stylesheet)
+}
 
 // eslint-disable-next-line
 const ThinkComponent = ({ node, children, ...props }) => {
@@ -112,6 +123,11 @@ const ThinkComponent = ({ node, children, ...props }) => {
 }
 
 export function MarkdownRender(props) {
+  useEffect(() => {
+    if (typeof props.children === 'string' && /\$|\\\(|\\\[/.test(props.children)) {
+      loadKatexFonts()
+    }
+  }, [props.children])
   return (
     <div dir="auto">
       <ReactMarkdown
