@@ -544,7 +544,7 @@ async function ensureDevCssPlaceholders(cssFiles) {
 async function removeKatexResources(outputDir) {
   const manifestPath = path.join(outputDir, 'manifest.json')
   const manifest = await fs.readJson(manifestPath)
-  const keepResource = (resource) => resource !== 'katex-fonts/*'
+  const keepResource = (resource) => resource !== 'katex-fonts/*.woff2'
   if (manifest.manifest_version === 3) {
     manifest.web_accessible_resources = manifest.web_accessible_resources
       .map((entry) => ({ ...entry, resources: entry.resources.filter(keepResource) }))

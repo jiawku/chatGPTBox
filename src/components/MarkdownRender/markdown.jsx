@@ -11,7 +11,7 @@ import { Hyperlink } from './Hyperlink'
 import { memo, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import PropTypes from 'prop-types'
-import { loadKatexFonts } from './katex-fonts.mjs'
+import { observeKatexFonts } from './katex-fonts.mjs'
 
 /** Request fonts when KaTeX has produced a math span. */
 // eslint-disable-next-line no-unused-vars
@@ -19,9 +19,9 @@ function KatexSpan({ node, className, ...props }) {
   const ref = useRef(null)
   useEffect(() => {
     if (className?.split(/\s+/).includes('katex')) {
-      loadKatexFonts(ref.current)
+      return observeKatexFonts(ref.current)
     }
-  }, [className, props.children])
+  }, [className])
 
   return <span className={className} {...props} ref={ref} />
 }

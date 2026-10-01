@@ -2,10 +2,15 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { JSDOM } from 'jsdom'
-import { loadKatexFonts } from '../../../src/components/MarkdownRender/katex-fonts.mjs'
+import {
+  loadKatexFonts,
+  observeKatexFonts,
+} from '../../../src/components/MarkdownRender/katex-fonts.mjs'
 
-const glyph = (family, text = 'x', style = 'normal', weight = '400') =>
-  `<span style="font-family: ${family}; font-style: ${style}; font-weight: ${weight}">${text}</span>`
+const glyph = (family, text = 'x', style = 'normal', weight = '400') => {
+  const css = `font-family: ${family}; font-style: ${style}; font-weight: ${weight}`
+  return `<span style="${css}">${text}</span>`
+}
 const simpleMath = glyph('KaTeX_Math', 'x', 'italic') + glyph('KaTeX_Main', '+1')
 
 function fixture(t, html = simpleMath, options = {}) {
@@ -26,7 +31,12 @@ function fixture(t, html = simpleMath, options = {}) {
     const filename = url.split('/').at(-1)
     requests.push(filename)
     if (options.fetch) await options.fetch(filename)
-    return { ok: true, arrayBuffer: async () => new ArrayBuffer(1) }
+    const status = options.status?.(filename) ?? 200
+    return {
+      ok: status >= 200 && status < 300,
+      status,
+      arrayBuffer: async () => new ArrayBuffer(1),
+    }
   })
   const originalFontFace = Object.getOwnPropertyDescriptor(globalThis, 'FontFace')
   globalThis.FontFace = class {
@@ -123,7 +133,7 @@ test('a transient fetch failure retries the failed face without another render',
   assert.deepEqual(f.warnings, [])
 })
 
-test('a failed decode has bounded retries and does not block other faces or future recovery', async (t) => {
+test('decode failures have bounded retries and allow independent recovery', async (t) => {
   let fail = true
   const f = fixture(t, simpleMath, {
     load: async (font) => {
@@ -146,7 +156,7 @@ test('a failed decode has bounded retries and does not block other faces or futu
 test('face matching handles quoted families, bold italic and synthetic styles', async (t) => {
   const f = fixture(
     t,
-    glyph("'KaTeX_Main', serif", 'x', 'italic', '700') +
+    glyph(`'KaTeX_Main', serif`, 'x', 'italic', '700') +
       glyph('KaTeX_Script', 'y', 'italic', '700') +
       glyph('KaTeX_Math', 'z') +
       glyph('serif', 'plain'),
@@ -167,4 +177,79 @@ test('extension pages attach one stylesheet and keep native per-face loading', a
   assert.equal(links.length, 1)
   assert.ok(links[0].href.endsWith('/katex-fonts.css'))
   assert.deepEqual(f.requests, [])
+})
+
+test('a transient HTTP 503 retries successfully without refetching other faces', async (t) => {
+  let attempts = 0
+  const f = fixture(t, simpleMath, {
+    status: (filename) => {
+      if (filename === 'KaTeX_Math-Italic.woff2' && ++attempts === 1) return 503
+      return 200
+    },
+  })
+  await loadKatexFonts(f.root)
+  assert.equal(attempts, 2)
+  assert.equal(f.requests.length, 3)
+  assert.equal(f.registered.length, 2)
+  assert.deepEqual(f.warnings, [])
+})
+
+test('persistent HTTP errors retry once and preserve successful faces', async (t) => {
+  for (const status of [404, 503]) {
+    const f = fixture(t, simpleMath, {
+      status: (filename) => (filename === 'KaTeX_Math-Italic.woff2' ? status : 200),
+    })
+    await loadKatexFonts(f.root)
+    assert.equal(f.requests.length, 3)
+    assert.deepEqual(
+      f.registered.map((font) => font.family),
+      ['KaTeX_Main'],
+    )
+    assert.equal(f.warnings.length, 1)
+    assert.match(f.warnings[0][1].message, new RegExp(`KaTeX_Math-Italic: ${status}`))
+  }
+})
+
+test('identical replacement DOM avoids formula style scans', async (t) => {
+  const f = fixture(t)
+  const styles = t.mock.method(f.document.defaultView, 'getComputedStyle')
+  const stop = observeKatexFonts(f.root)
+  t.after(stop)
+  await loadKatexFonts(f.root)
+  const initialScans = styles.mock.callCount()
+  const original = f.root.innerHTML
+  const outside = f.document.createElement('p')
+  f.document.body.appendChild(outside)
+  for (let token = 0; token < 5; token++) {
+    outside.textContent += 'token'
+    f.root.innerHTML = original
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+  assert.equal(styles.mock.callCount(), initialScans)
+  assert.equal(f.requests.length, 2)
+})
+
+test('content and style changes load faces; disconnect stops observation', async (t) => {
+  const f = fixture(t)
+  const styles = t.mock.method(f.document.defaultView, 'getComputedStyle')
+  const stop = observeKatexFonts(f.root)
+  t.after(stop)
+  await loadKatexFonts(f.root)
+  const html = f.root.querySelector('.katex-html')
+  html.insertAdjacentHTML('beforeend', glyph('KaTeX_AMS', 'R'))
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.ok(f.requests.includes('KaTeX_AMS-Regular.woff2'))
+  html.querySelector('span').style.fontWeight = '700'
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.ok(f.requests.includes('KaTeX_Math-BoldItalic.woff2'))
+  const scans = styles.mock.callCount()
+  html.querySelector('span').firstChild.data = 'y'
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.ok(styles.mock.callCount() > scans)
+  stop()
+  const beforeDisconnect = styles.mock.callCount()
+  html.insertAdjacentHTML('beforeend', glyph('KaTeX_Size3', '∑'))
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(styles.mock.callCount(), beforeDisconnect)
+  assert.ok(!f.requests.includes('KaTeX_Size3-Regular.woff2'))
 })

@@ -32,6 +32,27 @@ const fontFiles = [
 })
 const fontLoads = new WeakMap()
 
+/** Watch actual formula changes instead of rebuilt React child identities. */
+export function observeKatexFonts(root) {
+  let content
+  const update = () => {
+    const nextContent = root.outerHTML
+    if (nextContent === content) return
+    content = nextContent
+    loadKatexFonts(root)
+  }
+  const observer = new root.ownerDocument.defaultView.MutationObserver(update)
+  observer.observe(root, {
+    childList: true,
+    characterData: true,
+    attributes: true,
+    attributeFilter: ['class', 'style'],
+    subtree: true,
+  })
+  update()
+  return () => observer.disconnect()
+}
+
 function usedFonts(root) {
   const document = root.ownerDocument
   const html = root.querySelector('.katex-html')

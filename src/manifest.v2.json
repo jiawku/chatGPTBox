@@ -57,7 +57,7 @@
   ],
   "web_accessible_resources": [
     "logo.png",
-    "katex-fonts/*"
+    "katex-fonts/*.woff2"
   ],
   "commands": {
     "newChat": {
